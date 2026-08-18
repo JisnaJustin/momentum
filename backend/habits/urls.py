@@ -1,5 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework.permissions import AllowAny
 from .views import (
     RegisterView,
     UserProfileView,
@@ -9,7 +10,19 @@ from .views import (
     WeeklyTrackerView
 )
 
-router = DefaultRouter()
+
+class PublicRootRouter(DefaultRouter):
+    """
+    Default router that allows unauthenticated access to the API root index.
+    Individual ViewSets and views enforce their own authentication and permissions.
+    """
+    def get_api_root_view(self, api_urls=None):
+        view = super().get_api_root_view(api_urls=api_urls)
+        view.cls.permission_classes = [AllowAny]
+        return view
+
+
+router = PublicRootRouter()
 router.register(r'habits', HabitViewSet, basename='habit')
 router.register(r'habit-logs', HabitLogViewSet, basename='habit-log')
 
