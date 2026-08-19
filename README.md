@@ -256,22 +256,106 @@ npm run build
 
 ---
 
-## 🚀 Production Deployment
+## 🚀 Production Deployment Guide (Render & PostgreSQL)
 
-### Backend Production Checklist
-1. Set `DEBUG=False` in environment variables.
-2. Set a strong secret key: `SECRET_KEY=your-production-secret-key`.
-3. Configure `ALLOWED_HOSTS=yourdomain.com,api.yourdomain.com`.
-4. Configure `CORS_ALLOWED_ORIGINS=https://yourdomain.com`.
-5. Set `DATABASE_URL` (e.g., PostgreSQL on Supabase, RDS, or Railway).
-6. Collect static files: `python manage.py collectstatic --noinput`.
+The recommended deployment architecture uses **Render** for all components:
+- **Database**: Render PostgreSQL
+- **Backend API**: Render Web Service (Python/Django with Gunicorn & WhiteNoise)
+- **Frontend SPA**: Render Static Site (React 19 + Vite with client-side SPA routing)
 
-### Frontend Production Checklist
-1. Set `VITE_API_URL=https://api.yourdomain.com/api` in frontend `.env.production`.
-2. Build static bundle: `npm run build`.
-3. Deploy the `dist/` directory to Vercel, Netlify, Cloudflare Pages, or AWS S3/CloudFront.
+---
+
+### Step 1: Push Code to GitHub
+
+```bash
+git add .
+git commit -m "Prepare Momentum for production deployment"
+git push origin main
+```
+
+---
+
+### Step 2: Create a PostgreSQL Database on Render
+
+1. Log in to your [Render Dashboard](https://dashboard.render.com/).
+2. Click **New +** → **PostgreSQL**.
+3. Set the following fields:
+   - **Name**: `momentum-db`
+   - **Database**: `momentum_db`
+   - **User**: `momentum_user`
+   - **Region**: Choose closest to you (e.g., Oregon, Frankfurt, Singapore)
+   - **Instance Type**: `Free`
+4. Click **Create Database**.
+5. Once created, copy the **Internal Database URL** (if deploying backend on Render) or **External Database URL**.
+
+---
+
+### Step 3: Deploy Django Backend on Render
+
+1. In Render Dashboard, click **New +** → **Web Service**.
+2. Connect your GitHub repository: `https://github.com/JisnaJustin/momentum.git`.
+3. Configure the service settings:
+   - **Name**: `momentum-api`
+   - **Root Directory**: `backend`
+   - **Environment**: `Python 3`
+   - **Region**: Same region as your database
+   - **Branch**: `main`
+   - **Build Command**: `./build.sh` (or `pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate`)
+   - **Start Command**: `gunicorn momentum_backend.wsgi:application`
+   - **Instance Type**: `Free`
+4. Add the following **Environment Variables**:
+   - `DEBUG`: `False`
+   - `SECRET_KEY`: `<Generate a random secure 50+ character string>`
+   - `DATABASE_URL`: `<Paste your Render PostgreSQL Database URL from Step 2>`
+   - `ALLOWED_HOSTS`: `localhost,127.0.0.1,.onrender.com`
+   - `CORS_ALLOWED_ORIGINS`: `https://<your-frontend-subdomain>.onrender.com` (update after creating frontend in Step 4)
+   - `CSRF_TRUSTED_ORIGINS`: `https://<your-frontend-subdomain>.onrender.com`
+5. Click **Create Web Service**.
+6. Wait for the build and deployment to succeed. Copy your backend URL:
+   `https://momentum-api.onrender.com`
+
+---
+
+### Step 4: Deploy React Frontend on Render
+
+1. In Render Dashboard, click **New +** → **Static Site**.
+2. Connect the same GitHub repository: `https://github.com/JisnaJustin/momentum.git`.
+3. Configure the static site settings:
+   - **Name**: `momentum-app`
+   - **Root Directory**: `frontend`
+   - **Branch**: `main`
+   - **Build Command**: `npm install && npm run build`
+   - **Publish Directory**: `dist`
+4. Add the following **Environment Variable**:
+   - `VITE_API_URL`: `https://momentum-api.onrender.com/api` *(replace with your actual backend URL from Step 3)*
+5. Configure **Redirects & Rewrites** (if not automatically detected from `public/_redirects`):
+   - Type: `Rewrite`
+   - Source: `/*`
+   - Destination: `/index.html`
+6. Click **Create Static Site**.
+
+---
+
+### Step 5: Final Cross-Origin Connection
+
+1. Return to your `momentum-api` Web Service on Render.
+2. In the **Environment** tab, ensure:
+   - `CORS_ALLOWED_ORIGINS`: `https://momentum-app.onrender.com` *(replace with your actual frontend URL)*
+   - `CSRF_TRUSTED_ORIGINS`: `https://momentum-app.onrender.com`
+3. Save changes. Render will automatically redeploy the backend with the new origins.
+
+---
+
+### Step 6: Create Admin User (Optional)
+
+In your Render backend dashboard, go to the **Shell** tab and run:
+
+```bash
+python manage.py createsuperuser
+```
 
 ---
 
 ## 📄 License
 This project is open-source and available under the [MIT License](LICENSE).
+

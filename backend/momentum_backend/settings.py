@@ -24,6 +24,10 @@ DEBUG = os.environ.get('DEBUG', 'True').lower() in ('true', '1', 't')
 ALLOWED_HOSTS = [
     host.strip() for host in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if host.strip()
 ]
+# Automatically include Render external hostname if provided
+render_external_hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if render_external_hostname and render_external_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_external_hostname)
 
 # Application definition
 INSTALLED_APPS = [
@@ -46,6 +50,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -74,13 +79,23 @@ TEMPLATES = [
 WSGI_APPLICATION = 'momentum_backend.wsgi.application'
 
 # Database
-# Default: SQLite for local development; supports DATABASE_URL if configured
+# Default: SQLite for local development; supports DATABASE_URL (PostgreSQL) in production
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    import dj_database_url
+    DATABASES['default'] = dj_database_url.parse(
+        database_url,
+        conn_max_age=600,
+        conn_health_checks=True,
+        ssl_require=not DEBUG,
+    )
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -111,6 +126,15 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -140,10 +164,33 @@ SIMPLE_JWT = {
 }
 
 # CORS Settings
-cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000')
+cors_origins_env = os.environ.get(
+    'CORS_ALLOWED_ORIGINS',
+    'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000'
+)
 CORS_ALLOWED_ORIGINS = [
     origin.strip() for origin in cors_origins_env.split(',') if origin.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
-if DEBUG:
+if DEBUG and not os.environ.get('CORS_ALLOWED_ORIGINS'):
     CORS_ALLOW_ALL_ORIGINS = True
+
+# CSRF Settings
+csrf_origins_env = os.environ.get('CSRF_TRUSTED_ORIGINS', '')
+if csrf_origins_env:
+    CSRF_TRUSTED_ORIGINS = [
+        origin.strip() for origin in csrf_origins_env.split(',') if origin.strip()
+    ]
+elif not DEBUG and CORS_ALLOWED_ORIGINS:
+    # Automatically trust HTTPS origins configured for CORS
+    CSRF_TRUSTED_ORIGINS = [
+        origin for origin in CORS_ALLOWED_ORIGINS if origin.startswith('https://')
+    ]
+
+# Security Settings for Production
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'True').lower() in ('true', '1', 't')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+
