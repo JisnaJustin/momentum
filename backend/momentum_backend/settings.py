@@ -87,15 +87,26 @@ DATABASES = {
     }
 }
 
-database_url = os.environ.get('DATABASE_URL')
+database_url = os.environ.get('DATABASE_URL', '').strip()
 if database_url:
+    # Auto-fix common prefix formatting issues
+    if database_url.startswith('://'):
+        database_url = f"postgresql{database_url}"
+    
     import dj_database_url
-    DATABASES['default'] = dj_database_url.parse(
-        database_url,
-        conn_max_age=600,
-        conn_health_checks=True,
-        ssl_require=not DEBUG,
-    )
+    try:
+        parsed_db = dj_database_url.parse(
+            database_url,
+            conn_max_age=600,
+            conn_health_checks=True,
+            ssl_require=not DEBUG,
+        )
+        if parsed_db:
+            DATABASES['default'] = parsed_db
+    except Exception as e:
+        import sys
+        print(f"[Momentum Settings] Warning: Could not parse DATABASE_URL ({e}). Falling back to default database.", file=sys.stderr)
+
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
